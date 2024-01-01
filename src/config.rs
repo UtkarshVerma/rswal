@@ -9,7 +9,9 @@ pub struct Templates {
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub alpha: Option<u8>,
+    #[serde(default = "default_alpha")]
+    pub alpha: u8,
+
     pub templates: Vec<Templates>,
 }
 
@@ -17,6 +19,10 @@ impl Config {
     pub fn new(config: &str) -> Result<Self, Error> {
         serde_yaml::from_str(config)
     }
+}
+
+fn default_alpha() -> u8 {
+    100
 }
 
 #[cfg(test)]
@@ -44,6 +50,6 @@ templates:
         assert_eq!(rofi_colors.source, "colors.rasi".to_string());
         assert_eq!(rofi_colors.target, "~/.config/rofi/colors.rasi".to_string());
 
-        assert_eq!(config.alpha, Some(80));
+        assert_eq!(config.alpha, 80);
     }
 }

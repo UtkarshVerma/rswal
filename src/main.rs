@@ -73,7 +73,7 @@ fn main() {
     });
 
     let context = Context {
-        alpha: args.alpha.unwrap_or(config.alpha.unwrap_or(100)),
+        alpha: args.alpha.unwrap_or(config.alpha),
         colors: colorscheme,
     };
     let templater = Templater::new(&context);

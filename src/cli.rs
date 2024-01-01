@@ -1,5 +1,6 @@
 use clap::Parser;
 
+// TODO: -l and -c should be mutually exclusive
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
