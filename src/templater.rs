@@ -1,4 +1,6 @@
-use handlebars::{handlebars_helper, Handlebars, RenderError};
+use std::fmt;
+
+use handlebars::{handlebars_helper, Handlebars};
 use serde::Serialize;
 
 handlebars_helper!(hex: |number: u8| format!("{:x}", number));
@@ -9,6 +11,23 @@ handlebars_helper!(mul: |multiplicand: f32, multiplier: f32| {
     multiplicand * multiplier
 });
 handlebars_helper!(int: |number: f32| number as u32);
+
+#[derive(Debug, Clone)]
+pub struct RenderError {
+    line: Option<usize>,
+    column: Option<usize>,
+
+    reason: String,
+}
+
+impl fmt::Display for RenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.line, self.column) {
+            (Some(line), Some(column)) => write!(f, "({}, {}): {}", line, column, self.reason),
+            _ => write!(f, "{}", self.reason),
+        }
+    }
+}
 
 pub struct Templater<'a, T> {
     registry: Handlebars<'a>,
@@ -29,7 +48,13 @@ impl<'a, T> Templater<'a, T> {
 
 impl<'a, T: Serialize> Templater<'a, T> {
     pub fn render(&self, template: &str) -> Result<String, RenderError> {
-        self.registry.render_template(template, self.data)
+        self.registry
+            .render_template(template, self.data)
+            .map_err(|error| RenderError {
+                line: error.line_no,
+                column: error.column_no,
+                reason: error.reason().to_string(),
+            })
     }
 }
 

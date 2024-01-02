@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_yaml::Error;
+use serde_yaml::{Error, Mapping};
 
 #[derive(Deserialize)]
 pub struct Templates {
@@ -9,20 +9,15 @@ pub struct Templates {
 
 #[derive(Deserialize)]
 pub struct Config {
-    #[serde(default = "default_alpha")]
-    pub alpha: u8,
-
-    pub templates: Vec<Templates>,
+    pub theme: Option<String>,
+    pub variables: Option<Mapping>,
+    pub templates: Option<Vec<Templates>>,
 }
 
 impl Config {
     pub fn new(config: &str) -> Result<Self, Error> {
         serde_yaml::from_str(config)
     }
-}
-
-fn default_alpha() -> u8 {
-    100
 }
 
 #[cfg(test)]
@@ -32,7 +27,10 @@ mod tests {
     #[test]
     fn test_parse() {
         let input = r#"
-alpha: 80
+theme: monokai
+
+variables:
+  alpha: 0.1
 
 templates:
   - source: dunstrc
@@ -41,15 +39,18 @@ templates:
     target: ~/.config/rofi/colors.rasi
 "#;
         let config = Config::new(input).unwrap();
+        let templates = config.templates.unwrap();
+        let variables = config.variables.unwrap();
 
-        let dunstrc = config.templates.get(0).unwrap();
+        let dunstrc = templates.get(0).unwrap();
         assert_eq!(dunstrc.source, "dunstrc".to_string());
         assert_eq!(dunstrc.target, "~/.config/dunst/dunstrc".to_string());
 
-        let rofi_colors = config.templates.get(1).unwrap();
+        let rofi_colors = templates.get(1).unwrap();
         assert_eq!(rofi_colors.source, "colors.rasi".to_string());
         assert_eq!(rofi_colors.target, "~/.config/rofi/colors.rasi".to_string());
 
-        assert_eq!(config.alpha, 80);
+        assert_eq!(variables.get("alpha").unwrap(), 0.1);
+        assert_eq!(config.theme.unwrap(), "monokai");
     }
 }

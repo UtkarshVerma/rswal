@@ -1,33 +1,27 @@
-use directories::BaseDirs;
-use std::path::PathBuf;
-use std::{fs, io};
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
-use crate::BINARY_NAME;
-
-pub struct Directories {
+pub struct Paths {
+    pub config_file: PathBuf,
     pub config_dir: PathBuf,
-    pub cache_dir: PathBuf,
     pub template_dir: PathBuf,
-    pub colorscheme_dir: PathBuf,
+    pub theme_dir: PathBuf,
 }
 
-impl Directories {
-    pub fn new() -> Option<Self> {
-        BaseDirs::new().map(|base_dirs| {
-            let config_dir = base_dirs.config_dir().join(BINARY_NAME);
-
-            Directories {
-                config_dir: config_dir.clone(),
-                cache_dir: base_dirs.cache_dir().join(BINARY_NAME),
-                template_dir: config_dir.clone().join("templates"),
-                colorscheme_dir: config_dir.join("colorschemes"),
-            }
-        })
+impl Paths {
+    pub fn new(config_dir: &str) -> Self {
+        let config_dir = Path::new(config_dir);
+        Paths {
+            config_dir: config_dir.to_path_buf(),
+            config_file: config_dir.join("config.yaml"),
+            template_dir: config_dir.join("templates"),
+            theme_dir: config_dir.join("themes"),
+        }
     }
 
-    pub fn create(&self) -> io::Result<()> {
-        fs::create_dir_all(&self.config_dir)?;
-        fs::create_dir_all(&self.colorscheme_dir)?;
+    pub fn create_dirs(&self) -> io::Result<()> {
+        fs::create_dir_all(&self.theme_dir)?;
         fs::create_dir_all(&self.template_dir)?;
 
         Ok(())
@@ -40,14 +34,8 @@ pub fn resolve_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn test_config_dir() {
-        let dirs = Directories::new();
-        let config_dir = dirs.unwrap().config_dir;
-
-        // TODO: A better way to test this?
-        assert!(config_dir.ends_with(BINARY_NAME));
+    fn test_resolve_path() {
+        // TODO: Add test for path resolution
     }
 }
