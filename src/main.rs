@@ -1,125 +1,119 @@
 mod cli;
 mod config;
+mod logger;
 mod os;
-mod templater;
+mod parser;
+mod renderer;
+mod template;
 mod theme;
 
-use std::fs;
-use std::path::PathBuf;
-use std::process::exit;
-
-use os::Paths;
-
-use crate::config::Config;
-use crate::templater::Templater;
-use crate::theme::Theme;
+use crate::cli::Args;
+use crate::config::{Config, Error as ConfigError};
+use crate::logger::{error, warn, Logger};
+use crate::os::{exit, Directories, Path, ReadDirError};
+use crate::renderer::{context, Renderer};
+use crate::template::{Error as TemplateError, Template};
+use crate::theme::{Error as ThemeError, Theme};
 
 const BINARY_NAME: &str = env!("CARGO_PKG_NAME");
 
-#[derive(serde::Serialize)]
-struct Context {
-    pub variables: serde_yaml::Mapping,
-    pub colors: Theme,
-}
-
-// TODO: Need to support both yaml and yml
-// TODO: Tidy the unwrap hell
-fn list_themes(theme_dir: &PathBuf) {
-    fs::read_dir(theme_dir).unwrap().for_each(|entry| {
-        let path = entry.unwrap().path();
-        if path.extension().unwrap_or_default() != "yaml" {
-            return;
-        }
-
-        println!("{}", path.file_stem().unwrap().to_str().unwrap());
-    });
-}
-
 fn main() {
-    let args = cli::parse_args();
-    let paths = Paths::new(&args.config_dir);
+    Logger::init();
+    let cli_args = Args::parse();
+    let dirs = Directories::new(&cli_args.config_dir);
 
-    // TODO: This should be handled on installation
-    paths.create_dirs().unwrap_or_else(|_| {
-        eprintln!("error: could not create application directories");
-        exit(1);
-    });
+    if cli_args.list_themes {
+        list_themes(&dirs.theme_dir).unwrap_or_else(|error| {
+            let message = match error {
+                ReadDirError::DirectoryDoesNotExist => "theme directory does not exist".to_string(),
+                ReadDirError::PermissionDenied => {
+                    "permission denied for theme directory".to_string()
+                }
+                ReadDirError::Other(error) => format!("{error}"),
+            };
 
-    if args.list_themes {
-        list_themes(&paths.theme_dir);
+            error!("could not list themes ({message})")
+        });
         return;
     }
 
-    let contents = fs::read_to_string(paths.config_file).unwrap_or_default();
-    let config = Config::new(&contents).unwrap_or_else(|_| {
-        eprintln!("error: invalid config syntax");
+    let config_file = Path::new(&cli_args.config_dir).join("config.yaml");
+    let config = Config::new(&config_file).unwrap_or_else(|error| {
+        match error {
+            ConfigError::ParseFailed(error) => error!("could not parse config ({error})"),
+            ConfigError::ReadFailed(error) => error!("could not read config ({error})"),
+        }
+        exit(1);
+    });
+
+    let theme_name = cli_args.theme.or(config.theme).unwrap_or_else(|| {
+        error!("no theme specified");
+        exit(1);
+    });
+    let theme = read_theme(&theme_name, &dirs.theme_dir).unwrap_or_else(|error| {
+        match error {
+            ThemeError::ReadFailed(error) => {
+                error!("could not read theme '{theme_name}' ({error})")
+            }
+            ThemeError::ParseFailed(error) => {
+                error!("could not parse theme '{theme_name}' ({error})")
+            }
+        }
         exit(1);
     });
 
     let mut variables = config.variables.unwrap_or_default();
-    if let Some(cli_vars) = args.variables {
-        cli_vars.iter().for_each(|var| {
-            let (key, value) = var.split_once(':').unwrap();
+    variables.extend(cli_args.variables.into_iter().map(|v| (v.name, v.value)));
 
-            // TODO: Tidy this
-            if let Ok(float) = value.parse::<f32>() {
-                variables.insert(key.into(), float.into());
-            } else {
-                variables.insert(key.into(), value.into());
-            }
-        })
-    }
-
-    let theme_name = args.theme.or(config.theme).unwrap_or_else(|| {
-        eprintln!("error: no theme specified");
-        exit(1);
+    let context = context!({
+        "variables": variables,
+        "colors": theme,
     });
-    let theme_file = paths.theme_dir.join(theme_name.to_string() + ".yaml");
-    let contents = fs::read_to_string(theme_file).unwrap_or_else(|_| {
-        eprintln!(r#"error: theme "{theme_name}" does not exist"#);
-        exit(1);
-    });
-    let theme = Theme::new(&contents).unwrap_or_else(|error| {
-        eprintln!(r#"error: theme "{theme_name}" has invalid syntax"#);
-        eprintln!("> {error}");
-        exit(1);
-    });
+    let renderer = Renderer::new(&context);
 
-    let context = Context {
-        // TODO: Remove hardcode
-        variables,
-        colors: theme,
-    };
-    let templater = Templater::new(&context);
-    if let Some(templates) = config.templates {
-        templates.iter().for_each(|template| {
-            let template_file = paths.template_dir.join(&template.source);
-            let rendered = fs::read_to_string(template_file)
-                .map(|contents| {
-                    templater
-                        .render(&contents)
-                        .map_err(|error| {
-                            eprintln!(r#"warn: could not render template "{}""#, template.source);
-                            eprintln!("> {error}");
-                        })
-                        .ok()
-                })
-                .unwrap_or_else(|_| {
-                    eprintln!(r#"warn: template "{}" does not exist"#, template.source);
-                    None
-                });
-
-            if let Some(rendered) = rendered {
-                let target = os::resolve_path(&template.target);
-
-                // TODO: Partial writes?
-                fs::write(target, rendered).unwrap_or_else(|_| {
-                    eprintln!(
-                        r#"warn: target directory for template "{}" is inaccessible"#,
-                        template.source
-                    );
-                });
+    let templates = config.templates.unwrap_or_default();
+    templates
+        .iter()
+        .map(|template| Template::new(&template.source, &template.target, &dirs.template_dir))
+        .for_each(|ref template| {
+            if let Err(error) = template.render(&renderer) {
+                match error {
+                    TemplateError::ReadFailed(error) => {
+                        warn!("could not read template '{}' ({error})", template.name);
+                    }
+                    TemplateError::RenderFailed(error) => {
+                        warn!("could not render template '{}' ({error})", template.name);
+                    }
+                    TemplateError::WriteFailed(error) => {
+                        warn!(
+                            "could not write template '{}' to '{}' ({error})",
+                            template.name, template.target
+                        )
+                    }
+                }
             }
         });
+}
+
+fn list_themes(theme_dir: &Path) -> Result<(), ReadDirError> {
+    let files = os::read_dir(theme_dir)?;
+    let mut themes: Vec<&str> = files
+        .iter()
+        .map(|file| file.as_ref())
+        .filter(|file| file.extension().unwrap_or_default() == "yaml")
+        .map(|file| file.file_stem().unwrap_or_default().to_str().unwrap())
+        .collect();
+    themes.sort();
+
+    for theme in themes {
+        println!("{theme}");
     }
+
+    Ok(())
+}
+
+fn read_theme(name: &str, dir: &Path) -> Result<Theme, ThemeError> {
+    let theme_file = dir.join(format!("{name}.yaml"));
+
+    Theme::new(&theme_file)
 }
