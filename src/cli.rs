@@ -22,8 +22,12 @@ pub struct Args {
     #[arg(long, default_value_t = format!("~/.config/{BINARY_NAME}"))]
     pub config_dir: String,
 
-    /// Define variables as key:value pairs.
-    #[arg(short = 'v', long = "variable", num_args = 1.., value_parser = parse_variable)]
+    /// Specify hooks.
+    #[arg(short = 'H', long, num_args = 1..)]
+    pub hooks: Option<Vec<String>>,
+
+    /// Define variables as key=value pairs.
+    #[arg(short = 'v', num_args = 1.., value_parser = parse_variable)]
     pub variables: Vec<Variable>,
 }
 

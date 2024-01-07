@@ -2,7 +2,7 @@ use crate::util::Error;
 use std::fs;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::path::{Path as StdPath, PathBuf};
-pub use std::process::exit;
+pub use std::process::{exit, Command};
 
 #[derive(Debug)]
 pub struct Path {

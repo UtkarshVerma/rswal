@@ -22,6 +22,7 @@ pub struct Template {
 #[derive(Deserialize)]
 pub struct Config {
     pub theme: Option<String>,
+    pub hooks: Option<Vec<String>>,
     pub variables: Option<HashMap<String, Value>>,
     pub templates: Option<Vec<Template>>,
 }
@@ -47,6 +48,9 @@ fn test_parser() {
     let input = "
 theme: monokai
 
+hooks:
+  - set-wallpaper.sh
+
 variables:
   alpha: 0.1
 
@@ -59,6 +63,7 @@ templates:
     let config: Config = input.try_into().unwrap();
     let templates = config.templates.unwrap_or_default();
     let variables = config.variables.unwrap_or_default();
+    let hooks = config.hooks.unwrap_or_default();
 
     let dunstrc = templates.get(0).unwrap();
     assert_eq!(dunstrc.source, "dunstrc".to_string());
@@ -70,4 +75,6 @@ templates:
 
     assert_eq!(variables.get("alpha").unwrap(), 0.1);
     assert_eq!(config.theme.unwrap(), "monokai");
+
+    assert_eq!(hooks.get(0).unwrap(), "set-wallpaper.sh");
 }
