@@ -1,24 +1,16 @@
 use crate::os::{self, Path, ReadError};
-use crate::parser::{Deserialize, Error as ParseError, Parser};
+use crate::parser::{Deserialize, ParseError, Parser};
 use crate::renderer::Value;
+use crate::util::Error;
 use std::collections::HashMap;
 
-#[derive(Debug)]
-pub enum Error {
-    ParseFailed(ParseError),
-    ReadFailed(ReadError),
-}
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("could not parse config ({0})")]
+    ParseFailed(#[from] ParseError),
 
-impl From<ParseError> for Error {
-    fn from(error: ParseError) -> Self {
-        Error::ParseFailed(error)
-    }
-}
-
-impl From<ReadError> for Error {
-    fn from(error: ReadError) -> Self {
-        Error::ReadFailed(error)
-    }
+    #[error("could not read config ({0})")]
+    ReadFailed(#[from] ReadError),
 }
 
 #[derive(Deserialize)]
@@ -35,16 +27,18 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(path: &Path) -> Result<Self, Error> {
-        os::read_file(path)?.as_str().try_into()
+    pub fn new(path: &Path) -> Result<Self, ConfigError> {
+        let contents = os::read_file(path)?;
+
+        Ok(Self::try_from(contents.as_str())?)
     }
 }
 
 impl TryFrom<&str> for Config {
-    type Error = Error;
+    type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Parser::parse(value)?)
+        Parser::parse(value)
     }
 }
 

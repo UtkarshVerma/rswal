@@ -1,4 +1,8 @@
-use handlebars::{handlebars_helper, Handlebars, RenderError, RenderErrorReason};
+use crate::util::Error;
+use handlebars::{
+    handlebars_helper, Handlebars, RenderError as HbRenderError,
+    RenderErrorReason as HbRenderErrorReason,
+};
 pub use serde::Serialize;
 pub use serde_json::json as context;
 pub use serde_yaml::Value;
@@ -13,99 +17,53 @@ handlebars_helper!(mul: |multiplicand: f32, multiplier: f32| {
 });
 handlebars_helper!(int: |number: f32| number as u32);
 
-enum ErrorKind {
-    TemplateError,
-    InvalidParamType(String),
-    MissingVariable(Option<String>),
-    ParamNotFound(String, String),
-    PartialNotFound(String),
-    UndefinedHelper(String),
-    UndefinedDecorator(String),
-    InvalidLoggingLevel(String),
-    Unhandled(RenderError),
-}
-
-pub struct Error {
+#[derive(Error, Debug)]
+pub struct RenderError {
     line: Option<usize>,
     column: Option<usize>,
-    kind: ErrorKind,
+    reason: String,
 }
 
-// HACK: The handlebars-rs crate should expose the RenderErrorReason string
-impl From<RenderError> for Error {
-    fn from(error: RenderError) -> Self {
+impl From<HbRenderError> for RenderError {
+    fn from(error: HbRenderError) -> Self {
         let mut line = error.line_no;
         let mut column = error.column_no;
 
-        let kind = match error.reason() {
-            RenderErrorReason::TemplateError(error) => {
+        let reason = match error.reason() {
+            HbRenderErrorReason::TemplateError(error) => {
                 if let Some((l, c)) = error.pos() {
                     line = Some(l);
                     column = Some(c);
                 }
 
-                ErrorKind::TemplateError
+                error.reason().to_string()
             }
-            RenderErrorReason::InvalidParamType(param) => {
-                ErrorKind::InvalidParamType(param.to_string())
+            HbRenderErrorReason::MissingVariable(name) => {
+                format!(
+                    "missing variable{}",
+                    name.as_ref()
+                        .map(|name| format!(" '{name}'"))
+                        .unwrap_or_default()
+                )
             }
-            RenderErrorReason::MissingVariable(name) => ErrorKind::MissingVariable(name.clone()),
-            RenderErrorReason::ParamNotFoundForName(helper, param) => {
-                ErrorKind::ParamNotFound(helper.to_string(), param.to_string())
+            HbRenderErrorReason::ParamTypeMismatchForName(helper, param, param_type) => {
+                format!("helper '{helper}' expected '{param_type}' value for param '{param}'")
             }
-            RenderErrorReason::PartialNotFound(name) => {
-                ErrorKind::PartialNotFound(name.to_string())
-            }
-            RenderErrorReason::HelperNotFound(name) => ErrorKind::UndefinedHelper(name.to_string()),
-            RenderErrorReason::InvalidLoggingLevel(level) => {
-                ErrorKind::InvalidLoggingLevel(level.to_string())
-            }
-            RenderErrorReason::DecoratorNotFound(name) => {
-                ErrorKind::UndefinedDecorator(name.to_string())
-            }
-            _ => ErrorKind::Unhandled(error),
-            // TODO: Untested
-            // RenderErrorReason::ParamNotFoundForIndex(_, _) => todo!(),
-            // RenderErrorReason::ParamTypeMismatchForName(x, y, z) => todo!(),
-            // RenderErrorReason::HashTypeMismatchForName(_, _, _) => todo!(),
-            // RenderErrorReason::CannotIncludeSelf => todo!(),
-            // RenderErrorReason::BlockContentRequired => todo!(),
-            // RenderErrorReason::InvalidJsonPath(_) => todo!(),
-            // RenderErrorReason::InvalidJsonIndex(_) => todo!(),
-            // RenderErrorReason::SerdeError(_) => todo!(),
-            // RenderErrorReason::NestedError(_) => todo!(),
+            HbRenderErrorReason::HelperNotFound(name) => format!("undefined helper '{name}'"),
+
+            reason => reason.to_string(),
         };
 
-        Error { line, column, kind }
+        RenderError {
+            line,
+            column,
+            reason,
+        }
     }
 }
 
-impl Display for Error {
+impl Display for RenderError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let message = match &self.kind {
-            ErrorKind::TemplateError => "invalid syntax".to_string(),
-            ErrorKind::InvalidParamType(param) => {
-                format!("invalid param type, expected '{param}' ")
-            }
-            ErrorKind::MissingVariable(name) => {
-                let name = name
-                    .as_ref()
-                    .map(|name| format!(" '{}'", name.clone()))
-                    .unwrap_or_default();
-                format!("missing variable{name}")
-            }
-            ErrorKind::ParamNotFound(helper, param) => {
-                format!("invalid '{param}' passed to '{helper}'")
-            }
-            ErrorKind::PartialNotFound(name) => format!("partial '{name}' not found"),
-            ErrorKind::UndefinedHelper(name) => format!("undefined helper '{name}'"),
-            ErrorKind::InvalidLoggingLevel(level) => {
-                format!("invalid logging level '{level}'")
-            }
-            ErrorKind::UndefinedDecorator(name) => format!("undefined decorator '{name}'"),
-            ErrorKind::Unhandled(error) => format!("unhandled error occured ({error})"),
-        };
-
         let location = self
             .line
             .map(|l| {
@@ -118,17 +76,17 @@ impl Display for Error {
             })
             .unwrap_or_default();
 
-        write!(f, "{message}{location}")
+        write!(f, "{}{location}", self.reason)
     }
 }
 
 pub struct Renderer<'a, T> {
     registry: Handlebars<'a>,
-    data: &'a T,
+    context: &'a T,
 }
 
 impl<'a, T: Serialize> Renderer<'a, T> {
-    pub fn new(data: &'a T) -> Self {
+    pub fn new(context: &'a T) -> Self {
         let mut registry = Handlebars::new();
 
         registry.set_strict_mode(true);
@@ -137,10 +95,22 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("mul", Box::new(mul));
         registry.register_helper("int", Box::new(int));
 
-        Renderer { registry, data }
+        Renderer { registry, context }
     }
 
-    pub fn render(&self, template: &str) -> Result<String, Error> {
-        Ok(self.registry.render_template(template, self.data)?)
+    pub fn render(&self, template: &str) -> Result<String, RenderError> {
+        Ok(self.registry.render_template(template, self.context)?)
     }
+}
+
+#[test]
+fn test_renderer() {
+    let context = context!({
+        "name": "John",
+        "age": 21,
+    });
+    let renderer = Renderer::new(&context);
+
+    assert_eq!(renderer.render("name: {{name}}").unwrap(), "name: John");
+    assert_eq!(renderer.render("age: {{age}}").unwrap(), "age: 21");
 }

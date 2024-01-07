@@ -1,22 +1,37 @@
 use crate::os::{self, Path, ReadError};
-use crate::parser::{Deserialize, Error as ParseError, Parser};
+use crate::parser::{Deserialize, ParseError, Parser};
 use crate::renderer::Serialize;
+use crate::util::Error;
+use std::error::Error;
 
-#[derive(Debug)]
-pub enum Error {
-    ReadFailed(ReadError),
-    ParseFailed(ParseError),
+#[derive(Error, Debug)]
+enum ThemeErrorKind {
+    #[error("could not read theme")]
+    Read(
+        #[from]
+        #[source]
+        ReadError,
+    ),
+
+    #[error("could not parse theme")]
+    Parse(
+        #[from]
+        #[source]
+        ParseError,
+    ),
 }
 
-impl From<ParseError> for Error {
-    fn from(error: ParseError) -> Self {
-        Error::ParseFailed(error)
-    }
+#[derive(Error, Debug)]
+// TODO: Get the source string somehow
+#[error("{kind} '{theme} ({:?})", kind.source())]
+pub struct ThemeError {
+    theme: String,
+    kind: ThemeErrorKind,
 }
 
-impl From<ReadError> for Error {
-    fn from(error: ReadError) -> Self {
-        Error::ReadFailed(error)
+impl ThemeError {
+    fn new(theme: String, kind: ThemeErrorKind) -> ThemeError {
+        ThemeError { theme, kind }
     }
 }
 
@@ -47,16 +62,22 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub fn new(path: &Path) -> Result<Self, Error> {
-        os::read_file(path)?.as_str().try_into()
+    pub fn new(path: &Path) -> Result<Self, ThemeError> {
+        // TODO: Handle this
+        let name = path.file_stem().unwrap_or_default();
+        let contents =
+            os::read_file(path).map_err(|error| ThemeError::new(name.to_string(), error.into()))?;
+
+        Self::try_from(contents.as_str())
+            .map_err(|error| ThemeError::new(name.to_string(), error.into()))
     }
 }
 
 impl TryFrom<&str> for Theme {
-    type Error = Error;
+    type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Parser::parse(value)?)
+        Parser::parse(value)
     }
 }
 

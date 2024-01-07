@@ -1,19 +1,20 @@
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use crate::util::Error;
 use std::fs;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 use std::path::{Path as StdPath, PathBuf};
 pub use std::process::exit;
 
+#[derive(Debug)]
 pub struct Path {
     buffer: PathBuf,
 }
 
 impl Path {
     pub fn new(path: &str) -> Self {
-        let path = shellexpand::tilde(path).to_string();
+        let path = shellexpand::tilde(path);
 
         Path {
-            buffer: PathBuf::from(&path),
+            buffer: PathBuf::from(path.as_ref()),
         }
     }
 
@@ -21,6 +22,20 @@ impl Path {
         Path {
             buffer: self.buffer.join(path),
         }
+    }
+
+    pub fn file_stem(&self) -> Option<&str> {
+        self.as_ref().file_stem()?.to_str()
+    }
+
+    pub fn extension(&self) -> Option<&str> {
+        self.as_ref().extension()?.to_str()
+    }
+}
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer.eq(&other.buffer)
     }
 }
 
@@ -36,17 +51,18 @@ impl From<PathBuf> for Path {
     }
 }
 
-impl Display for Path {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{}", self.buffer.display())
-    }
-}
-
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ReadError {
+    #[error("file not found")]
     FileNotFound,
+
+    #[error("permission denied")]
     PermissionDenied,
+
+    #[error("file contents are not valid utf-8")]
     InvalidData,
+
+    #[error("{0}")]
     Other(IoError),
 }
 
@@ -61,23 +77,15 @@ impl From<IoError> for ReadError {
     }
 }
 
-impl Display for ReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let reason = match self {
-            ReadError::FileNotFound => "file not found".to_string(),
-            ReadError::PermissionDenied => "permission denied".to_string(),
-            ReadError::InvalidData => "file contents are not valid utf-8".to_string(),
-            ReadError::Other(error) => format!("{error}"),
-        };
-
-        write!(f, "{reason}")
-    }
-}
-
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum WriteError {
+    #[error("directory does not exist")]
     DirectoryDoesNotExist,
+
+    #[error("permission denied")]
     PermissionDenied,
+
+    #[error("{0}")]
     Other(IoError),
 }
 
@@ -91,22 +99,15 @@ impl From<IoError> for WriteError {
     }
 }
 
-impl Display for WriteError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let message = match self {
-            WriteError::DirectoryDoesNotExist => "directory does not exist".to_string(),
-            WriteError::PermissionDenied => "permission denied".to_string(),
-            WriteError::Other(error) => format!("{error}"),
-        };
-
-        write!(f, "{message}")
-    }
-}
-
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ReadDirError {
+    #[error("directory does not exist")]
     DirectoryDoesNotExist,
+
+    #[error("permission denied")]
     PermissionDenied,
+
+    #[error("{0}")]
     Other(IoError),
 }
 
@@ -120,32 +121,6 @@ impl From<IoError> for ReadDirError {
     }
 }
 
-pub struct Directories {
-    pub template_dir: Path,
-    pub theme_dir: Path,
-    pub hook_dir: Path,
-}
-
-impl Directories {
-    pub fn new(config_dir: &str) -> Self {
-        let config_dir = Path::new(config_dir);
-
-        Directories {
-            template_dir: config_dir.join("templates"),
-            theme_dir: config_dir.join("themes"),
-            hook_dir: config_dir.join("hooks"),
-        }
-    }
-
-    // TODO: This has to be thought out
-    // pub fn create(&self) -> io::Result<()> {
-    // fs::create_dir_all(&self.theme_dir)?;
-    // fs::create_dir_all(&self.template_dir)?;
-    // fs::create_dir_all(&self.hook_dir)?;
-    // Ok(())
-    // }
-}
-
 pub fn read_file(path: &Path) -> Result<String, ReadError> {
     Ok(fs::read_to_string(path)?)
 }
@@ -155,9 +130,41 @@ pub fn write_to_file(path: &Path, contents: &str) -> Result<(), WriteError> {
 }
 
 pub fn read_dir(path: &Path) -> Result<Vec<Path>, ReadDirError> {
-    Ok(fs::read_dir(path)?
-        .map(|entry| entry.unwrap().path().into())
-        .collect())
+    let entries = fs::read_dir(path)?
+        .map(|entry| Ok(entry?.path().into()))
+        .collect::<Result<Vec<Path>, IoError>>()?;
+
+    Ok(entries)
 }
 
-// TODO: Write tests
+#[test]
+fn test_path() {
+    let path = Path::new("/");
+
+    let path = path.join("root");
+    assert_eq!(path, Path::new("/root"));
+
+    let path = path.join("file.ext");
+    assert_eq!(path.file_stem().unwrap(), "file");
+    assert_eq!(path.extension().unwrap(), "ext");
+}
+
+#[test]
+fn test_io() {
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let dir_path = dir.path().to_path_buf().into();
+    let files = read_dir(&dir_path).unwrap();
+    assert_eq!(files.len(), 0);
+
+    let file: Path = dir_path.join("file.ext");
+    write_to_file(&file, "Hello").unwrap();
+    assert_eq!(read_file(&file).unwrap(), "Hello");
+
+    let files = read_dir(&dir_path).unwrap();
+    assert_eq!(files.len(), 1);
+
+    assert_eq!(file.file_stem().unwrap(), "file");
+    assert_eq!(file.extension().unwrap(), "ext");
+}

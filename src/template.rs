@@ -1,30 +1,46 @@
 use crate::os::{self, Path, ReadError, WriteError};
-use crate::renderer::{Error as RenderError, Renderer, Serialize};
+use crate::renderer::{RenderError, Renderer, Serialize};
+use crate::util::Error;
+use std::error::Error;
 
-pub enum Error {
-    ReadFailed(ReadError),
-    RenderFailed(RenderError),
-    WriteFailed(WriteError),
+#[derive(Error, Debug)]
+enum TemplateErrorKind {
+    #[error("could not read template")]
+    Read(
+        #[from]
+        #[source]
+        ReadError,
+    ),
+
+    #[error("could not render template")]
+    Render(
+        #[from]
+        #[source]
+        RenderError,
+    ),
+
+    #[error("could not write template")]
+    Write(
+        #[from]
+        #[source]
+        WriteError,
+    ),
 }
 
-impl From<ReadError> for Error {
-    fn from(error: ReadError) -> Self {
-        Error::ReadFailed(error)
+#[derive(Error, Debug)]
+#[error("{kind} '{template}' ({:?})", kind.source())]
+pub struct TemplateError {
+    template: String,
+    kind: TemplateErrorKind,
+}
+
+impl TemplateError {
+    fn new(template: String, kind: TemplateErrorKind) -> Self {
+        TemplateError { template, kind }
     }
 }
 
-impl From<RenderError> for Error {
-    fn from(error: RenderError) -> Self {
-        Error::RenderFailed(error)
-    }
-}
-
-impl From<WriteError> for Error {
-    fn from(error: WriteError) -> Self {
-        Error::WriteFailed(error)
-    }
-}
-
+#[derive(Debug)]
 pub struct Template {
     pub name: String,
     pub source: Path,
@@ -40,11 +56,18 @@ impl Template {
         }
     }
 
-    pub fn render<T: Serialize>(&self, renderer: &Renderer<T>) -> Result<(), Error> {
-        let contents = os::read_file(&self.source)?;
-        let rendered = renderer.render(&contents)?;
+    // TODO: Can the boilerplate be reduced?
+    pub fn render<T: Serialize>(&self, renderer: &Renderer<T>) -> Result<(), TemplateError> {
+        let contents = os::read_file(&self.source)
+            .map_err(|error| TemplateError::new(self.name.to_string(), error.into()))?;
 
-        // TODO: Partial writes?
-        Ok(os::write_to_file(&self.target, &rendered)?)
+        let rendered = renderer
+            .render(&contents)
+            .map_err(|error| TemplateError::new(self.name.to_string(), error.into()))?;
+
+        os::write_to_file(&self.target, &rendered)
+            .map_err(|error| TemplateError::new(self.name.to_string(), error.into()))?;
+
+        Ok(())
     }
 }

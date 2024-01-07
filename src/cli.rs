@@ -1,13 +1,10 @@
-use clap::Parser;
-
-use crate::parser::Parser as YamlParser;
-use crate::renderer::Value;
 use crate::BINARY_NAME;
+use clap::Parser;
 
 #[derive(Debug, Clone)]
 pub struct Variable {
     pub name: String,
-    pub value: Value,
+    pub value: String,
 }
 
 #[derive(Parser, Debug)]
@@ -32,7 +29,7 @@ pub struct Args {
 
 impl Args {
     pub fn parse() -> Self {
-        <Args as clap::Parser>::parse()
+        <Args as Parser>::parse()
     }
 }
 
@@ -43,17 +40,14 @@ fn parse_variable(variable: &str) -> Result<Variable, String> {
         return Err("variables should be specified as 'key=value' pairs".to_string());
     }
 
-    let value = YamlParser::parse(value)
-        .map_err(|_| format!("invalid value specified for variable '{key}'"))?;
-
     Ok(Variable {
-        name: key.into(),
-        value,
+        name: key.to_string(),
+        value: value.to_string(),
     })
 }
 
 #[test]
-fn test_parser() {
+fn test_cli() {
     use clap::CommandFactory;
 
     Args::command().debug_assert()
