@@ -23,15 +23,18 @@ enum ThemeErrorKind {
 
 #[derive(Error, Debug)]
 // TODO: Get the source string somehow
-#[error("{kind} '{theme} ({:?})", kind.source())]
+#[error("{kind} '{theme}' ({:?})", kind.source())]
 pub struct ThemeError {
     theme: String,
     kind: ThemeErrorKind,
 }
 
 impl ThemeError {
-    fn new(theme: String, kind: ThemeErrorKind) -> ThemeError {
-        ThemeError { theme, kind }
+    fn new(theme: &str, kind: ThemeErrorKind) -> ThemeError {
+        ThemeError {
+            theme: theme.to_string(),
+            kind,
+        }
     }
 }
 
@@ -62,14 +65,11 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub fn new(path: &Path) -> Result<Self, ThemeError> {
-        // TODO: Handle this
-        let name = path.file_stem().unwrap_or_default();
-        let contents =
-            os::read_file(path).map_err(|error| ThemeError::new(name.to_string(), error.into()))?;
+    pub fn new(name: &str, theme_dir: &Path) -> Result<Self, ThemeError> {
+        let file = Path::new(theme_dir).join(Path::new(name).with_extension("yaml"));
+        let contents = os::read_file(&file).map_err(|err| ThemeError::new(name, err.into()))?;
 
-        Self::try_from(contents.as_str())
-            .map_err(|error| ThemeError::new(name.to_string(), error.into()))
+        Self::try_from(contents.as_str()).map_err(|err| ThemeError::new(name, err.into()))
     }
 }
 
@@ -83,7 +83,15 @@ impl TryFrom<&str> for Theme {
 
 #[test]
 fn test_parser() {
-    let input = "
+    use tempfile::tempdir;
+
+    let theme_dir = tempdir().unwrap();
+    let theme_dir_path = theme_dir.path();
+    let theme_name = "monokai";
+    let theme_file = theme_dir_path.join(format!("{theme_name}.yaml"));
+    os::write_to_file(
+        &theme_file,
+        "
 special:
   background: '#222222'
   foreground: '#f7f1ff'
@@ -108,8 +116,11 @@ bright:
   red: '#fc618d'
   white: '#f7f1ff'
   yellow: '#fce566'
-";
-    let theme: Theme = input.try_into().unwrap();
+",
+    )
+    .unwrap();
+
+    let theme = Theme::new(theme_name, theme_dir_path).unwrap();
 
     assert_eq!(theme.special.background, "#222222");
     assert_eq!(theme.special.foreground, "#f7f1ff");

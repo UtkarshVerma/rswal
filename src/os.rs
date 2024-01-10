@@ -1,55 +1,10 @@
 use crate::util::Error;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
-use std::path::{Path as StdPath, PathBuf};
-pub use std::process::{exit, Command};
-
-#[derive(Debug)]
-pub struct Path {
-    buffer: PathBuf,
-}
-
-impl Path {
-    pub fn new(path: &str) -> Self {
-        let path = shellexpand::tilde(path);
-
-        Path {
-            buffer: PathBuf::from(path.as_ref()),
-        }
-    }
-
-    pub fn join<T: AsRef<StdPath>>(&self, path: T) -> Self {
-        Path {
-            buffer: self.buffer.join(path),
-        }
-    }
-
-    pub fn file_stem(&self) -> Option<&str> {
-        self.as_ref().file_stem()?.to_str()
-    }
-
-    pub fn extension(&self) -> Option<&str> {
-        self.as_ref().extension()?.to_str()
-    }
-}
-
-impl PartialEq for Path {
-    fn eq(&self, other: &Self) -> bool {
-        self.buffer.eq(&other.buffer)
-    }
-}
-
-impl AsRef<StdPath> for Path {
-    fn as_ref(&self) -> &StdPath {
-        self.buffer.as_ref()
-    }
-}
-
-impl From<PathBuf> for Path {
-    fn from(path: PathBuf) -> Self {
-        Path { buffer: path }
-    }
-}
+pub use std::path::{Path, PathBuf};
+use std::process::Command;
+pub use std::process::{exit, ExitCode, ExitStatus};
 
 #[derive(Error, Debug)]
 pub enum ReadError {
@@ -121,32 +76,67 @@ impl From<IoError> for ReadDirError {
     }
 }
 
-pub fn read_file(path: &Path) -> Result<String, ReadError> {
+#[derive(Error, Debug)]
+pub enum ExecuteError {
+    #[error("command does not exist")]
+    CommandDoesNotExist,
+
+    #[error("permission denied")]
+    PermissionDenied,
+
+    #[error("{0}")]
+    Other(IoError),
+}
+
+impl From<IoError> for ExecuteError {
+    fn from(error: IoError) -> Self {
+        match error.kind() {
+            IoErrorKind::NotFound => ExecuteError::CommandDoesNotExist,
+            IoErrorKind::PermissionDenied => ExecuteError::PermissionDenied,
+            _ => ExecuteError::Other(error),
+        }
+    }
+}
+
+pub fn read_file<T: AsRef<Path>>(path: T) -> Result<String, ReadError> {
     Ok(fs::read_to_string(path)?)
 }
 
-pub fn write_to_file(path: &Path, contents: &str) -> Result<(), WriteError> {
+pub fn write_to_file<T: AsRef<Path>>(path: T, contents: &str) -> Result<(), WriteError> {
     Ok(fs::write(path, contents)?)
 }
 
-pub fn read_dir(path: &Path) -> Result<Vec<Path>, ReadDirError> {
+pub fn read_dir<T: AsRef<Path>>(path: T) -> Result<Vec<PathBuf>, ReadDirError> {
     let entries = fs::read_dir(path)?
-        .map(|entry| Ok(entry?.path().into()))
-        .collect::<Result<Vec<Path>, IoError>>()?;
+        .map(|entry| Ok(entry?.path()))
+        .collect::<Result<Vec<_>, IoError>>()?;
 
     Ok(entries)
 }
 
+pub fn execute<S: AsRef<OsStr>, I: IntoIterator<Item = S>>(
+    command: S,
+    args: I,
+) -> Result<(Vec<u8>, ExitStatus), ExecuteError> {
+    let output = Command::new(command).args(args).output()?;
+
+    Ok((output.stdout, output.status))
+}
+
+pub fn resolve_path(path: &Path) -> Option<PathBuf> {
+    match path.strip_prefix("~") {
+        Ok(subpath) => home::home_dir().map(|home| home.join(subpath)),
+        Err(_) => Some(path.to_path_buf()),
+    }
+}
+
 #[test]
-fn test_path() {
-    let path = Path::new("/");
-
-    let path = path.join("root");
-    assert_eq!(path, Path::new("/root"));
-
-    let path = path.join("file.ext");
-    assert_eq!(path.file_stem().unwrap(), "file");
-    assert_eq!(path.extension().unwrap(), "ext");
+fn test_path_resolution() {
+    let path = Path::new("~/.config");
+    assert_eq!(
+        resolve_path(path).unwrap(),
+        home::home_dir().unwrap().join(".config")
+    );
 }
 
 #[test]
@@ -154,11 +144,11 @@ fn test_io() {
     use tempfile::tempdir;
 
     let dir = tempdir().unwrap();
-    let dir_path = dir.path().to_path_buf().into();
+    let dir_path = dir.path();
     let files = read_dir(&dir_path).unwrap();
     assert_eq!(files.len(), 0);
 
-    let file: Path = dir_path.join("file.ext");
+    let file = dir_path.join("file.ext");
     write_to_file(&file, "Hello").unwrap();
     assert_eq!(read_file(&file).unwrap(), "Hello");
 
@@ -167,4 +157,11 @@ fn test_io() {
 
     assert_eq!(file.file_stem().unwrap(), "file");
     assert_eq!(file.extension().unwrap(), "ext");
+}
+
+#[test]
+fn test_execute() {
+    let (output, status) = execute("echo", ["Hello"]).unwrap();
+    assert_eq!(&*output, b"Hello\n");
+    assert!(status.success());
 }

@@ -1,4 +1,4 @@
-pub use serde::Deserialize;
+pub use serde::{de, Deserialize, Deserializer};
 pub use serde_yaml::Error as ParseError;
 
 pub struct Parser;
@@ -11,8 +11,8 @@ impl Parser {
 
 #[test]
 fn test_parser() {
+    use crate::util::HashMap;
     use serde_yaml::Value;
-    use std::collections::HashMap;
 
     let input = "
 name: John
