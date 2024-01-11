@@ -1,5 +1,5 @@
 pub use serde::{de, Deserialize, Deserializer};
-pub use serde_yaml::Error as ParseError;
+pub use serde_yaml::{to_string, Error as ParseError};
 
 pub struct Parser;
 

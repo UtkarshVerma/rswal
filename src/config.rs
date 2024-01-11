@@ -84,6 +84,8 @@ templates:
     )
     .unwrap();
 
+    let homedir = home::home_dir().unwrap();
+
     let config = Config::new(config_dir_path).unwrap();
     let templates = config.templates.unwrap_or_default();
     let variables = config.variables.unwrap_or_default();
@@ -91,11 +93,11 @@ templates:
 
     let dunstrc = templates.get(0).unwrap();
     assert_eq!(dunstrc.source, "dunstrc");
-    assert_eq!(dunstrc.target, Path::new("~/.config/dunst/dunstrc"));
+    assert_eq!(dunstrc.target, homedir.join(".config/dunst/dunstrc"));
 
     let rofi_colors = templates.get(1).unwrap();
     assert_eq!(rofi_colors.source, "colors.rasi");
-    assert_eq!(rofi_colors.target, Path::new("~/.config/rofi/colors.rasi"));
+    assert_eq!(rofi_colors.target, homedir.join(".config/rofi/colors.rasi"));
 
     assert_eq!(variables.get("alpha").unwrap(), 0.1);
     assert_eq!(config.theme.unwrap(), "monokai");

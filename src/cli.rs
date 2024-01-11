@@ -4,6 +4,8 @@ use crate::renderer::Value;
 use crate::BINARY_NAME;
 use clap::Parser as ArgParser;
 
+// TODO: Make clap follow the app's error reporting style
+
 #[derive(ArgParser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
@@ -24,7 +26,7 @@ pub struct Args {
     pub hooks: Option<Vec<String>>,
 
     /// Define variables as key=value pairs.
-    #[arg(short = 'v', num_args = 1.., value_parser = parse_variable)]
+    #[arg(short, long, num_args = 1.., value_parser = parse_key_value_pair)]
     pub variables: Option<Vec<(String, Value)>>,
 }
 
@@ -45,9 +47,9 @@ fn parse_config_dir(path: &str) -> Result<PathBuf, String> {
     resolved.ok_or("could not resolve the provided path".to_string())
 }
 
-fn parse_variable(variable: &str) -> Result<(String, Value), String> {
-    let (key, value) = variable.split_once('=').unwrap_or_default();
-    if key.is_empty() || value.is_empty() {
+fn parse_key_value_pair(pair: &str) -> Result<(String, Value), String> {
+    let (key, value) = pair.split_once('=').unwrap_or_default();
+    if key.is_empty() {
         return Err("variables should be specified as 'key=value' pairs".to_string());
     }
 

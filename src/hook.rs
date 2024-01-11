@@ -45,9 +45,22 @@ impl<'a> Hook<'a> {
         }
     }
 
-    pub fn execute(&self) -> Result<(), HookError> {
-        let (output, status) =
-            os::execute(&self.path, []).map_err(|error| HookError::new(self.name, error.into()))?;
+    pub fn execute<K: ToString, V: ToString>(
+        &self,
+        variables: &[(K, V)],
+    ) -> Result<String, HookError> {
+        let variables = variables
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.to_string().to_ascii_uppercase().replace("-", "_"),
+                    v.to_string(),
+                )
+            })
+            .collect::<Vec<(String, String)>>();
+
+        let (output, status) = os::execute(&self.path, [], &variables)
+            .map_err(|error| HookError::new(self.name, error.into()))?;
         if !status.success() {
             return Err(HookError::new(
                 self.name,
@@ -55,9 +68,7 @@ impl<'a> Hook<'a> {
             ));
         }
 
-        println!("{}", String::from_utf8_lossy(&output).trim());
-
-        Ok(())
+        Ok(String::from_utf8_lossy(&output).into())
     }
 }
 
@@ -76,13 +87,24 @@ fn test_execution() {
         &hook_file,
         "#!/bin/sh
 
-echo Hi",
+echo ${NAME}",
     )
     .unwrap();
     fs::set_permissions(&hook_file, fs::Permissions::from_mode(0o755)).unwrap();
 
     let hook = Hook::new(hook, &hook_dir_path);
-    assert!(matches!(hook.execute(), Ok(())));
+    let variables = vec![("name", "John")];
+    assert_eq!(hook.execute(&variables).unwrap(), "John\n");
+
+    os::write_to_file(
+        &hook_file,
+        "#!/bin/sh
+
+echo ${FIRST_NAME}",
+    )
+    .unwrap();
+    let variables = vec![("first-name", "John")];
+    assert_eq!(hook.execute(&variables).unwrap(), "John\n");
 }
 
 #[test]

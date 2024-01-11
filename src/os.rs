@@ -114,11 +114,15 @@ pub fn read_dir<T: AsRef<Path>>(path: T) -> Result<Vec<PathBuf>, ReadDirError> {
     Ok(entries)
 }
 
-pub fn execute<S: AsRef<OsStr>, I: IntoIterator<Item = S>>(
+pub fn execute<S: AsRef<OsStr>, I: IntoIterator<Item = S>, K: AsRef<OsStr>, V: AsRef<OsStr>>(
     command: S,
     args: I,
+    env_vars: &[(K, V)],
 ) -> Result<(Vec<u8>, ExitStatus), ExecuteError> {
-    let output = Command::new(command).args(args).output()?;
+    let output = Command::new(command)
+        .args(args)
+        .envs(env_vars.iter().map(|(k, v)| (k, v)))
+        .output()?;
 
     Ok((output.stdout, output.status))
 }
@@ -161,7 +165,25 @@ fn test_io() {
 
 #[test]
 fn test_execute() {
-    let (output, status) = execute("echo", ["Hello"]).unwrap();
-    assert_eq!(&*output, b"Hello\n");
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let dir_path = dir.path();
+
+    let script = dir_path.join("script.sh");
+    write_to_file(
+        &script,
+        "#!/bin/sh
+
+echo Hi ${NAME}",
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let variables: Vec<(&str, &str)> = vec![("NAME", "John")];
+    let (output, status) = execute(&script, [], &variables).unwrap();
+    assert_eq!(String::from_utf8_lossy(&output), "Hi John\n");
     assert!(status.success());
 }
