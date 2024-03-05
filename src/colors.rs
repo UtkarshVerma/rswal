@@ -1,7 +1,6 @@
-use std::fmt::Debug;
-
 use crate::util::Error;
-use palette::{self, Darken, Lighten, Srgb};
+use palette::{self, Darken, Hsl, IntoColor, Lighten, Saturate, ShiftHue, Srgb};
+use std::fmt::Debug;
 
 #[derive(Error, Debug)]
 pub enum ColorError {
@@ -16,7 +15,7 @@ pub struct Color {
 impl Color {
     pub fn new(red: u8, green: u8, blue: u8) -> Self {
         Color {
-            value: palette::Srgb::new(
+            value: Srgb::new(
                 red as f32 / 255.0,
                 green as f32 / 255.0,
                 blue as f32 / 255.0,
@@ -45,15 +44,31 @@ impl Color {
         format!("#{:02x}{:02x}{:02x}", color.red, color.green, color.blue)
     }
 
-    pub fn lighten(&self, amount: f32) -> Self {
+    pub fn lighten(self, factor: f32) -> Self {
         Color {
-            value: self.value.lighten(amount),
+            value: self.value.lighten(factor),
         }
     }
 
-    pub fn darken(&self, amount: f32) -> Self {
+    pub fn darken(self, factor: f32) -> Self {
         Color {
-            value: self.value.darken(amount),
+            value: self.value.darken(factor),
+        }
+    }
+
+    pub fn shift_hue(self, amount: f32) -> Self {
+        let hsl: Hsl = self.value.into_color();
+
+        Color {
+            value: hsl.shift_hue(amount).into_color(),
+        }
+    }
+
+    pub fn saturate(self, factor: f32) -> Self {
+        let hsl: Hsl = self.value.into_color();
+
+        Color {
+            value: hsl.saturate(factor).into_color(),
         }
     }
 }
@@ -61,7 +76,7 @@ impl Color {
 #[test]
 fn test_color_parse_and_render() {
     let color = Color::from_hex("#ffffff").unwrap();
-    assert_eq!(color.value, palette::Srgb::new(1.0, 1.0, 1.0));
+    assert_eq!(color.value, Srgb::new(1.0, 1.0, 1.0));
 
     let color = Color::from_hex("#ffffff").unwrap();
     assert_eq!(color.to_hex(), "#ffffff");
@@ -70,8 +85,14 @@ fn test_color_parse_and_render() {
 #[test]
 fn test_color_transforms() {
     let color = Color::from_hex("#000000").unwrap().lighten(0.5);
-    assert_eq!(color.value, palette::Srgb::new(0.5, 0.5, 0.5));
+    assert_eq!(color.value, Srgb::new(0.5, 0.5, 0.5));
 
     let color = Color::from_hex("#ffffff").unwrap().darken(0.5);
-    assert_eq!(color.value, palette::Srgb::new(0.5, 0.5, 0.5));
+    assert_eq!(color.value, Srgb::new(0.5, 0.5, 0.5));
+
+    let color = Color::from_hex("#ff0000").unwrap().shift_hue(90.0);
+    assert_eq!(color.value, Srgb::new(0.5, 1.0, 0.0));
+
+    let color = Color::from_hex("#aabb00").unwrap().saturate(0.2);
+    assert_eq!(color.value, Srgb::new(0.6666667, 0.73333335, 0.0));
 }

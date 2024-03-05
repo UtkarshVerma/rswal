@@ -17,13 +17,21 @@ handlebars_helper!(mul: |multiplicand: f32, multiplier: f32| {
     multiplicand * multiplier
 });
 handlebars_helper!(int: |number: f32| number as u32);
-handlebars_helper!(lighten: |color: String, amount: f32| {
+handlebars_helper!(lighten: |color: String, factor: f32| {
     let color = Color::from_hex(&color).unwrap();
-    color.lighten(amount).to_hex()
+    color.lighten(factor).to_hex()
 });
-handlebars_helper!(darken: |color: String, amount: f32| {
+handlebars_helper!(darken: |color: String, factor: f32| {
     let color = Color::from_hex(&color).unwrap();
-    color.darken(amount).to_hex()
+    color.darken(factor).to_hex()
+});
+handlebars_helper!(shift_hue: |color: String, amount: f32| {
+    let color = Color::from_hex(&color).unwrap();
+    color.shift_hue(amount).to_hex()
+});
+handlebars_helper!(saturate: |color: String, factor: f32| {
+    let color = Color::from_hex(&color).unwrap();
+    color.saturate(factor).to_hex()
 });
 
 #[derive(Error, Debug)]
@@ -103,8 +111,10 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("div", Box::new(div));
         registry.register_helper("mul", Box::new(mul));
         registry.register_helper("int", Box::new(int));
-        registry.register_helper("lighten", Box::new(lighten));
         registry.register_helper("darken", Box::new(darken));
+        registry.register_helper("lighten", Box::new(lighten));
+        registry.register_helper("shiftHue", Box::new(shift_hue));
+        registry.register_helper("saturate", Box::new(saturate));
 
         Renderer { registry, context }
     }
