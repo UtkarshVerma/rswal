@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 pub use std::path::{Path, PathBuf};
 use std::process::Command;
-pub use std::process::{exit, ExitCode, ExitStatus};
+pub use std::process::{ExitCode, ExitStatus};
 
 #[derive(Error, Debug)]
 pub enum ReadError {

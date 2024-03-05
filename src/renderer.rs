@@ -1,3 +1,4 @@
+use crate::colors::Color;
 use crate::util::Error;
 use handlebars::{
     handlebars_helper, Handlebars, RenderError as HbRenderError,
@@ -16,6 +17,14 @@ handlebars_helper!(mul: |multiplicand: f32, multiplier: f32| {
     multiplicand * multiplier
 });
 handlebars_helper!(int: |number: f32| number as u32);
+handlebars_helper!(lighten: |color: String, amount: f32| {
+    let color = Color::from_hex(&color).unwrap();
+    color.lighten(amount).to_hex()
+});
+handlebars_helper!(darken: |color: String, amount: f32| {
+    let color = Color::from_hex(&color).unwrap();
+    color.darken(amount).to_hex()
+});
 
 #[derive(Error, Debug)]
 pub struct RenderError {
@@ -94,6 +103,8 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("div", Box::new(div));
         registry.register_helper("mul", Box::new(mul));
         registry.register_helper("int", Box::new(int));
+        registry.register_helper("lighten", Box::new(lighten));
+        registry.register_helper("darken", Box::new(darken));
 
         Renderer { registry, context }
     }

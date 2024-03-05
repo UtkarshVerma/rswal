@@ -1,4 +1,5 @@
 mod cli;
+mod colors;
 mod config;
 mod directories;
 mod hook;
@@ -23,6 +24,7 @@ use crate::util::HashMap;
 
 const BINARY_NAME: &str = env!("CARGO_PKG_NAME");
 
+// TODO: Think of saving colorscheme to sequences for cross-terminal support
 fn main() -> ExitCode {
     Logger::init();
 

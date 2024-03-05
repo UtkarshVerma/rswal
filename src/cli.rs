@@ -36,6 +36,7 @@ impl Args {
     }
 }
 
+// TODO: Fall back to XDG_CONFIG_DIR first and then to ~/.config
 fn default_config_dir() -> PathBuf {
     Path::new("~/.config").join(BINARY_NAME)
 }
