@@ -33,6 +33,13 @@ handlebars_helper!(saturate: |color: String, factor: f32| {
     let color = Color::from_hex(&color).unwrap();
     color.saturate(factor).to_hex()
 });
+handlebars_helper!(to_rgba: |color: String, alpha: f32| {
+    let color = Color::from_hex(&color).unwrap();
+    color.to_rgba(alpha)
+});
+handlebars_helper!(strip: |color: String| {
+    color.strip_prefix('#').unwrap_or(&color).to_string()
+});
 
 #[derive(Error, Debug)]
 pub struct RenderError {
@@ -115,6 +122,8 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("lighten", Box::new(lighten));
         registry.register_helper("shiftHue", Box::new(shift_hue));
         registry.register_helper("saturate", Box::new(saturate));
+        registry.register_helper("toRgba", Box::new(to_rgba));
+        registry.register_helper("strip", Box::new(strip));
 
         Renderer { registry, context }
     }

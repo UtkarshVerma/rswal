@@ -71,6 +71,15 @@ impl Color {
             value: hsl.saturate(factor).into_color(),
         }
     }
+
+    pub fn to_rgba(&self, alpha: f32) -> String {
+        let color: Srgb<u8> = self.value.into_format();
+
+        format!(
+            "rgba({}, {}, {}, {:.2})",
+            color.red, color.green, color.blue, alpha
+        )
+    }
 }
 
 #[test]
