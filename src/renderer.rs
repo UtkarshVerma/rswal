@@ -16,6 +16,8 @@ handlebars_helper!(div: |dividend: f32, divisor: f32| {
 handlebars_helper!(mul: |multiplicand: f32, multiplier: f32| {
     multiplicand * multiplier
 });
+handlebars_helper!(add: |augend: f32, addend: f32| augend + addend);
+handlebars_helper!(sub: |minuend: f32, subtrahend: f32| minuend - subtrahend);
 handlebars_helper!(int: |number: f32| number as u32);
 handlebars_helper!(lighten: |color: String, factor: f32| {
     let color = Color::from_hex(&color).unwrap();
@@ -124,6 +126,8 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("saturate", Box::new(saturate));
         registry.register_helper("toRgba", Box::new(to_rgba));
         registry.register_helper("strip", Box::new(strip));
+        registry.register_helper("add", Box::new(add));
+        registry.register_helper("sub", Box::new(sub));
 
         Renderer { registry, context }
     }
