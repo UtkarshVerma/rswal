@@ -1,53 +1,24 @@
 use crate::os::{self, Path, PathBuf, ReadError, WriteError};
 use crate::renderer::{RenderError, Renderer, Serialize};
-use crate::util::Error;
-use std::error::Error;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
-enum TemplateErrorKind {
-    #[error("could not read template")]
-    Read(
-        #[from]
-        #[source]
-        ReadError,
-    ),
+pub enum TemplateError {
+    #[error("read failed -> {0}")]
+    Read(#[from] ReadError),
 
-    #[error("could not render template")]
-    Render(
-        #[from]
-        #[source]
-        RenderError,
-    ),
+    #[error("render failed -> {0}")]
+    Render(#[from] RenderError),
 
-    #[error("could not write template")]
-    Write(
-        #[from]
-        #[source]
-        WriteError,
-    ),
-}
-
-#[derive(Error, Debug)]
-#[error("{kind} '{template}' ({:?})", kind.source())]
-pub struct TemplateError {
-    template: String,
-    kind: TemplateErrorKind,
-}
-
-impl TemplateError {
-    fn new(template: &str, kind: TemplateErrorKind) -> Self {
-        TemplateError {
-            template: template.to_string(),
-            kind,
-        }
-    }
+    #[error("write failed -> {0}")]
+    Write(#[from] WriteError),
 }
 
 #[derive(Debug)]
 pub struct Template<'a> {
     pub name: &'a str,
-    pub source: PathBuf,
-    pub target: &'a Path,
+    source: PathBuf,
+    target: &'a Path,
 }
 
 impl<'a> Template<'a> {
@@ -60,40 +31,38 @@ impl<'a> Template<'a> {
     }
 
     pub fn render<T: Serialize>(&self, renderer: &Renderer<T>) -> Result<(), TemplateError> {
-        let contents = os::read_file(&self.source)
-            .map_err(|error| TemplateError::new(self.name, error.into()))?;
-
-        let rendered = renderer
-            .render(&contents)
-            .map_err(|error| TemplateError::new(self.name, error.into()))?;
-
-        os::write_to_file(&self.target, &rendered)
-            .map_err(|error| TemplateError::new(self.name, error.into()))?;
+        let contents = os::read_file(&self.source)?;
+        let rendered = renderer.render(&contents)?;
+        os::write_to_file(&self.target, &rendered)?;
 
         Ok(())
     }
 }
 
-#[test]
-fn test_renderer() {
+#[cfg(test)]
+mod tests {
+    use super::*;
     use crate::renderer::context;
     use tempfile::tempdir;
 
-    let dir = tempdir().unwrap();
-    let dir_path = dir.path();
+    #[test]
+    fn render() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
 
-    let source = "source";
-    let source_path = dir_path.join(source);
-    os::write_to_file(&source_path, "name: {{name}}").unwrap();
+        let source = "source";
+        let source_path = dir_path.join(source);
+        os::write_to_file(&source_path, "name: {{name}}").unwrap();
 
-    let target = dir_path.join("target");
-    let template = Template::new(source, &target, &dir_path);
+        let target = dir_path.join("target");
+        let template = Template::new(source, &target, &dir_path);
 
-    let context = context!({
-        "name": "John"
-    });
-    let renderer = Renderer::new(&context);
-    template.render(&renderer).unwrap();
+        let context = context!({
+            "name": "John"
+        });
+        let renderer = Renderer::new(&context);
+        template.render(&renderer).unwrap();
 
-    assert_eq!(os::read_file(&target).unwrap(), "name: John");
+        assert_eq!(os::read_file(&target).unwrap(), "name: John");
+    }
 }

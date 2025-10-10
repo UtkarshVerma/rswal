@@ -1,16 +1,18 @@
 use crate::os::{self, Path, PathBuf, ReadError};
-use crate::parser::{de, Deserialize, Deserializer, ParseError, Parser};
 use crate::renderer::Value;
-use crate::util::{Error, HashMap};
+use crate::yaml_parser::{de, Deserialize, Deserializer, ParseError, YamlParser};
+use std::collections::HashMap;
+use thiserror::Error;
 
 const CONFIG_FILE: &str = "config.yaml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error("could not parse config ({0})")]
+    // Parse error will be more thorought, so use a ->.
+    #[error("parse failed -> {0}")]
     ParseFailed(#[from] ParseError),
 
-    #[error("could not read config ({0})")]
+    #[error("read failed: {0}")]
     ReadFailed(#[from] ReadError),
 }
 
@@ -18,7 +20,6 @@ pub enum ConfigError {
 pub struct Template {
     pub source: String,
 
-    // TODO: This could use a rename to #[parser(...)]
     #[serde(deserialize_with = "resolve_path")]
     pub target: PathBuf,
 }
@@ -53,20 +54,24 @@ impl TryFrom<&str> for Config {
     type Error = ParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Parser::parse(value)
+        YamlParser::parse(value)
     }
 }
 
-#[test]
-fn test_parser() {
-    use tempfile::tempdir;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let config_dir = tempdir().unwrap();
-    let config_dir_path = config_dir.path();
-    let config_file = config_dir_path.join(CONFIG_FILE);
-    os::write_to_file(
-        &config_file,
-        "
+    #[test]
+    fn parse() {
+        use tempfile::tempdir;
+
+        let config_dir = tempdir().unwrap();
+        let config_dir_path = config_dir.path();
+        let config_file = config_dir_path.join(CONFIG_FILE);
+        os::write_to_file(
+            &config_file,
+            "
 theme: monokai
 
 hooks:
@@ -81,26 +86,27 @@ templates:
   - source: colors.rasi
     target: ~/.config/rofi/colors.rasi
 ",
-    )
-    .unwrap();
+        )
+        .unwrap();
 
-    let homedir = home::home_dir().unwrap();
+        let homedir = home::home_dir().unwrap();
 
-    let config = Config::new(config_dir_path).unwrap();
-    let templates = config.templates.unwrap_or_default();
-    let variables = config.variables.unwrap_or_default();
-    let hooks = config.hooks.unwrap_or_default();
+        let config = Config::new(config_dir_path).unwrap();
+        let templates = config.templates.unwrap_or_default();
+        let variables = config.variables.unwrap_or_default();
+        let hooks = config.hooks.unwrap_or_default();
 
-    let dunstrc = templates.get(0).unwrap();
-    assert_eq!(dunstrc.source, "dunstrc");
-    assert_eq!(dunstrc.target, homedir.join(".config/dunst/dunstrc"));
+        let dunstrc = templates.get(0).unwrap();
+        assert_eq!(dunstrc.source, "dunstrc");
+        assert_eq!(dunstrc.target, homedir.join(".config/dunst/dunstrc"));
 
-    let rofi_colors = templates.get(1).unwrap();
-    assert_eq!(rofi_colors.source, "colors.rasi");
-    assert_eq!(rofi_colors.target, homedir.join(".config/rofi/colors.rasi"));
+        let rofi_colors = templates.get(1).unwrap();
+        assert_eq!(rofi_colors.source, "colors.rasi");
+        assert_eq!(rofi_colors.target, homedir.join(".config/rofi/colors.rasi"));
 
-    assert_eq!(variables.get("alpha").unwrap(), 0.1);
-    assert_eq!(config.theme.unwrap(), "monokai");
+        assert_eq!(variables.get("alpha").unwrap(), 0.1);
+        assert_eq!(config.theme.unwrap(), "monokai");
 
-    assert_eq!(hooks.get(0).unwrap(), "set-wallpaper.sh");
+        assert_eq!(hooks.get(0).unwrap(), "set-wallpaper.sh");
+    }
 }

@@ -20,22 +20,27 @@ impl Directories {
     }
 }
 
-#[test]
-fn test_paths() {
-    let config_dir = "/root/.config/foo/";
-    let config_dir_path = Path::new(config_dir);
-    let dirs = Directories::new(config_dir_path);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    assert_eq!(
-        dirs.template_dir.to_str().unwrap(),
-        config_dir.to_string() + TEMPLATE_DIR
-    );
-    assert_eq!(
-        dirs.theme_dir.to_str().unwrap(),
-        config_dir.to_string() + THEME_DIR
-    );
-    assert_eq!(
-        dirs.hook_dir.to_str().unwrap(),
-        config_dir.to_string() + HOOK_DIR
-    );
+    #[test]
+    fn test_paths() {
+        let config_dir = "/root/.config/foo/";
+        let config_dir_path = Path::new(config_dir);
+        let dirs = Directories::new(config_dir_path);
+
+        assert_eq!(
+            dirs.template_dir.to_str().unwrap(),
+            config_dir.to_string() + TEMPLATE_DIR
+        );
+        assert_eq!(
+            dirs.theme_dir.to_str().unwrap(),
+            config_dir.to_string() + THEME_DIR
+        );
+        assert_eq!(
+            dirs.hook_dir.to_str().unwrap(),
+            config_dir.to_string() + HOOK_DIR
+        );
+    }
 }

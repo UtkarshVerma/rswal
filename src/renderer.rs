@@ -1,5 +1,4 @@
-use crate::colors::Color;
-use crate::util::Error;
+use crate::color::Color;
 use handlebars::{
     handlebars_helper, Handlebars, RenderError as HbRenderError,
     RenderErrorReason as HbRenderErrorReason,
@@ -8,7 +7,10 @@ pub use serde::Serialize;
 pub use serde_json::json as context;
 pub use serde_yaml::Value;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use thiserror::Error;
 
+handlebars_helper!(env: |key: String| std::env::var(&key).unwrap_or_default());
+handlebars_helper!(eq: |a: String, b: String| a == b);
 handlebars_helper!(hex: |number: u8| format!("{:x}", number));
 handlebars_helper!(div: |dividend: f32, divisor: f32| {
     dividend / divisor
@@ -128,6 +130,8 @@ impl<'a, T: Serialize> Renderer<'a, T> {
         registry.register_helper("strip", Box::new(strip));
         registry.register_helper("add", Box::new(add));
         registry.register_helper("sub", Box::new(sub));
+        registry.register_helper("env", Box::new(env));
+        registry.register_helper("eq", Box::new(eq));
 
         Renderer { registry, context }
     }
@@ -137,14 +141,19 @@ impl<'a, T: Serialize> Renderer<'a, T> {
     }
 }
 
-#[test]
-fn test_renderer() {
-    let context = context!({
-        "name": "John",
-        "age": 21,
-    });
-    let renderer = Renderer::new(&context);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    assert_eq!(renderer.render("name: {{name}}").unwrap(), "name: John");
-    assert_eq!(renderer.render("age: {{age}}").unwrap(), "age: 21");
+    #[test]
+    fn render() {
+        let context = context!({
+            "name": "John",
+            "age": 21,
+        });
+        let renderer = Renderer::new(&context);
+
+        assert_eq!(renderer.render("name: {{name}}").unwrap(), "name: John");
+        assert_eq!(renderer.render("age: {{age}}").unwrap(), "age: 21");
+    }
 }

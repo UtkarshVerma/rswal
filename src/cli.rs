@@ -1,11 +1,13 @@
-use crate::os::{self, Path, PathBuf};
-use crate::parser::Parser;
+use crate::os;
 use crate::renderer::Value;
-use crate::BINARY_NAME;
+use crate::yaml_parser::YamlParser;
 use clap::Parser as ArgParser;
+use std::env;
+use std::path::{Path, PathBuf};
+
+const BINARY_NAME: &str = env!("CARGO_PKG_NAME");
 
 // TODO: Make clap follow the app's error reporting style
-
 #[derive(ArgParser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
@@ -36,9 +38,9 @@ impl Args {
     }
 }
 
-// TODO: Fall back to XDG_CONFIG_DIR first and then to ~/.config
 fn default_config_dir() -> PathBuf {
-    Path::new("~/.config").join(BINARY_NAME)
+    let config_dir = env::var("XDG_CONFIG_DIR").unwrap_or("~/.config".to_string());
+    Path::new(&config_dir).join(BINARY_NAME)
 }
 
 fn parse_config_dir(path: &str) -> Result<PathBuf, String> {
@@ -56,13 +58,18 @@ fn parse_key_value_pair(pair: &str) -> Result<(String, Value), String> {
 
     Ok((
         key.to_string(),
-        Parser::parse(value).map_err(|err| err.to_string())?,
+        YamlParser::parse(value).map_err(|err| err.to_string())?,
     ))
 }
 
-#[test]
-fn test_parser() {
-    use clap::CommandFactory;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    Args::command().debug_assert()
+    #[test]
+    fn parse() {
+        use clap::CommandFactory;
+
+        Args::command().debug_assert()
+    }
 }

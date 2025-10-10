@@ -1,58 +1,76 @@
 mod cli;
-mod colors;
+mod color;
 mod config;
 mod directories;
 mod hook;
 mod logger;
 mod os;
-mod parser;
 mod renderer;
 mod template;
 mod theme;
-mod util;
+mod yaml_parser;
 
-use crate::cli::Args;
-use crate::config::Config;
-use crate::directories::Directories;
-use crate::hook::Hook;
-use crate::logger::{error, warn, Logger};
-use crate::os::{ExitCode, Path, ReadDirError};
-use crate::renderer::{context, Renderer, Value};
-use crate::template::Template;
-use crate::theme::Theme;
-use crate::util::HashMap;
+use cli::Args;
+use config::{Config, ConfigError};
+use directories::Directories;
+use hook::Hook;
+use logger::{error, Logger};
+use os::{Path, ReadDirError};
+use renderer::{context, Renderer, Value};
+use std::{collections::HashMap, process::ExitCode};
+use template::Template;
+use theme::{Theme, ThemeError};
+use thiserror::Error;
 
-const BINARY_NAME: &str = env!("CARGO_PKG_NAME");
+#[derive(Debug, Error)]
+enum ListThemesError {
+    #[error("could not read directory -> {0}")]
+    ReadDir(#[from] ReadDirError),
+}
 
-// TODO: Think of saving colorscheme to sequences for cross-terminal support
+#[derive(Debug, Error)]
+enum AppError {
+    #[error("could not read config -> {0}")]
+    Config(#[from] ConfigError),
+
+    #[error("could not list themes -> {0}")]
+    ListThemes(#[from] ListThemesError),
+
+    #[error("no theme specified")]
+    NoThemeSpecified,
+
+    #[error("invalid theme -> {0}")]
+    Theme(#[from] ThemeError),
+}
+
 fn main() -> ExitCode {
     Logger::init();
 
-    run().map(|_| ExitCode::SUCCESS).unwrap_or_else(|err| {
-        error!("{err}");
-
-        ExitCode::FAILURE
-    })
+    match run() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("{e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
-fn run() -> Result<(), String> {
+// TODO: Think of saving colorscheme to sequences for cross-terminal support
+fn run() -> Result<(), AppError> {
     let cli_args = Args::parse();
     let config_dir = &cli_args.config_dir;
     let dirs = Directories::new(&config_dir);
 
     if cli_args.list_themes {
-        list_themes(&dirs.theme_dir)?;
-
-        return Ok(());
+        return Ok(list_themes(&dirs.theme_dir)?);
     }
 
-    let config = Config::new(&config_dir).map_err(|err| err.to_string())?;
-
+    let config = Config::new(&config_dir)?;
     let theme_name = cli_args
         .theme
         .or(config.theme)
-        .ok_or("no theme specified")?;
-    let theme = Theme::new(&theme_name, &dirs.theme_dir).map_err(|err| err.to_string())?;
+        .ok_or(AppError::NoThemeSpecified)?;
+    let theme = Theme::new(&theme_name, &dirs.theme_dir)?;
 
     let mut variables = HashMap::new();
     if let Some(config_vars) = config.variables {
@@ -74,18 +92,14 @@ fn run() -> Result<(), String> {
         .map(|hook| Hook::new(hook, &dirs.hook_dir))
         .collect::<Vec<Hook>>();
 
-    render_templates(&templates, &theme, &variables)?;
+    render_templates(&templates, &theme, &variables);
     execute_hooks(&hooks, &variables);
 
     Ok(())
 }
 
-fn list_themes(theme_dir: &Path) -> Result<(), String> {
-    let files = os::read_dir(theme_dir).map_err(|err| match err {
-        ReadDirError::DirectoryDoesNotExist => "theme directory does not exist".to_string(),
-        ReadDirError::PermissionDenied => "permission denied for theme directory".to_string(),
-        ReadDirError::Other(error) => error.to_string(),
-    })?;
+fn list_themes(theme_dir: &Path) -> Result<(), ListThemesError> {
+    let files = os::read_dir(theme_dir)?;
 
     let mut themes = files
         .iter()
@@ -99,18 +113,12 @@ fn list_themes(theme_dir: &Path) -> Result<(), String> {
         .collect::<Vec<&str>>();
     themes.sort();
 
-    for theme in themes {
-        println!("{theme}");
-    }
+    themes.into_iter().for_each(|theme| println!("{theme}"));
 
     Ok(())
 }
 
-fn render_templates(
-    templates: &[Template],
-    theme: &Theme,
-    variables: &HashMap<String, Value>,
-) -> Result<(), String> {
+fn render_templates(templates: &[Template], theme: &Theme, variables: &HashMap<String, Value>) {
     let context = context!({
         "variables": variables,
         "colors": theme,
@@ -120,21 +128,19 @@ fn render_templates(
     templates.iter().for_each(|template| {
         template
             .render(&renderer)
-            .unwrap_or_else(|err| warn!("{err}"))
+            .unwrap_or_else(|err| error!("could not render template '{}' -> {err}", template.name));
     });
-
-    Ok(())
 }
 
 fn execute_hooks(hooks: &[Hook], variables: &HashMap<String, Value>) {
     let variables = variables
         .iter()
-        .map(|(k, v)| (k.as_str(), parser::to_string(v).unwrap_or_default()))
+        .map(|(k, v)| (k.as_str(), yaml_parser::to_string(v).unwrap_or_default()))
         .collect::<Vec<(&str, String)>>();
 
     hooks.iter().for_each(|hook| {
         let output = hook.execute(&variables).unwrap_or_else(|err| {
-            warn!("{err}");
+            error!("could not execute hook '{}': {err}", hook.name);
 
             "".to_string()
         });

@@ -1,5 +1,5 @@
+pub use log::error;
 use log::LevelFilter;
-pub use log::{error, warn};
 use std::io::Write;
 
 pub struct Logger;
@@ -9,10 +9,11 @@ impl Logger {
         env_logger::builder()
             .filter_level(LevelFilter::Warn)
             .format(|buf, record| {
+                let level_style = buf.default_level_style(record.level());
                 writeln!(
                     buf,
-                    "[{}] {}",
-                    buf.default_level_style(record.level()),
+                    "[{level_style}{}{level_style:#}] {}",
+                    record.level().to_string().to_lowercase(),
                     record.args()
                 )
             })
